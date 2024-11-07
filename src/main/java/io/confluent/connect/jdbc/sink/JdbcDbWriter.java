@@ -15,6 +15,7 @@
 
 package io.confluent.connect.jdbc.sink;
 
+import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 
@@ -63,12 +64,30 @@ public class JdbcDbWriter {
   void write(final Collection<SinkRecord> records)
       throws SQLException, TableAlterOrCreateException {
     final Connection connection = cachedConnectionProvider.getConnection();
-    String schemaName = getSchemaSafe(connection).orElse(null);
+    // String schemaName = getSchemaSafe(connection).orElse(null);
     String catalogName = getCatalogSafe(connection).orElse(null);
     try {
       final Map<TableId, BufferedRecords> bufferByTable = new HashMap<>();
       for (SinkRecord record : records) {
-        final TableId tableId = destinationTable(record.topic(), schemaName, catalogName);
+        if (!(record.value() instanceof GenericRecord)) {
+          continue;
+        }
+        GenericRecord recordValue = (GenericRecord) record.value();
+        if (!recordValue.hasField("source")) {
+          continue;
+        }
+        Object sourceObj = recordValue.get("source");
+        if (!(sourceObj instanceof GenericRecord)) {
+          continue;
+        }
+        GenericRecord sourceRecord = (GenericRecord) sourceObj;
+        if (!sourceRecord.hasField("table")) {
+          continue;
+        }
+        String tableName = sourceRecord.get("table").toString();
+        String schemaName = sourceRecord.get("schema").toString();
+
+        final TableId tableId = destinationTable(tableName, schemaName, catalogName);
         BufferedRecords buffer = bufferByTable.get(tableId);
         if (buffer == null) {
           buffer = new BufferedRecords(config, tableId, dbDialect, dbStructure, connection);
@@ -104,14 +123,9 @@ public class JdbcDbWriter {
     cachedConnectionProvider.close();
   }
 
-  TableId destinationTable(String topic, String schemaName, String catalogName) {
-    final String tableName = config.tableNameFormat.replace("${topic}", topic);
+  TableId destinationTable(String tableName, String schemaName, String catalogName) {
     if (tableName.isEmpty()) {
-      throw new ConnectException(String.format(
-          "Destination table name for topic '%s' is empty using the format string '%s'",
-          topic,
-          config.tableNameFormat
-      ));
+      throw new ConnectException("Destination table name is empty");
     }
     TableId parsedTableId = dbDialect.parseTableIdentifier(tableName);
     String finalCatalogName =
