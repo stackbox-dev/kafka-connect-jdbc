@@ -78,6 +78,11 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   static final String JSON_TYPE_NAME = "json";
   static final String JSONB_TYPE_NAME = "jsonb";
   static final String UUID_TYPE_NAME = "uuid";
+  static final String DATE_TYPE_NAME = "date";
+  static final String TIMESTAMPTZ_TYPE_NAME = "timestamptz";
+  static final String TIMESTAMP_TYPE_NAME = "timestamp";
+  static final String TIMESTAMP_WITH_TIMEZONE_TYPE_NAME = "timestamp with time zone";
+  static final String TIMESTAMP_WITHOUT_TIMEZONE_TYPE_NAME = "timestamp without time zone";
 
   /**
    * Define the PG datatypes that require casting upon insert/update statements.
@@ -86,7 +91,12 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
       Utils.mkSet(
           JSON_TYPE_NAME,
           JSONB_TYPE_NAME,
-          UUID_TYPE_NAME
+          UUID_TYPE_NAME,
+          DATE_TYPE_NAME,
+          TIMESTAMP_TYPE_NAME,
+          TIMESTAMPTZ_TYPE_NAME,
+            TIMESTAMP_WITH_TIMEZONE_TYPE_NAME,
+            TIMESTAMP_WITHOUT_TIMEZONE_TYPE_NAME
       )
   );
 
@@ -115,7 +125,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
         + "the connector may fail to write to tables with long names";
     // https://stackoverflow.com/questions/27865770/how-long-can-postgresql-table-names-be/27865772#27865772
     String nameLengthQuery = "SELECT length(repeat('1234567890', 1000)::NAME);";
-    
+
     int result;
     try (ResultSet rs = connection.createStatement().executeQuery(nameLengthQuery)) {
       if (rs.next()) {
@@ -579,9 +589,31 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
   protected Transform<ColumnId> columnNamesWithValueVariables(TableDefinition defn) {
     return (builder, columnId) -> {
       builder.appendColumnName(columnId.name());
-      builder.append(" = ?");
-      builder.append(valueTypeCast(defn, columnId));
+        if (!handleDateField1(builder, defn, columnId)) {
+            builder.append(" = ?");
+            builder.append(valueTypeCast(defn, columnId));
+        }
     };
+  }
+
+  protected boolean handleDateField1(ExpressionBuilder builder, TableDefinition tableDefn, ColumnId columnId) {
+      if (tableDefn != null) {
+          ColumnDefinition defn = tableDefn.definitionForColumn(columnId.name());
+          if (defn != null) {
+              String typeName = defn.typeName(); // database-specific
+              if (typeName != null) {
+                  typeName = typeName.toLowerCase();
+                  if (DATE_TYPE_NAME.equals(typeName)) {
+                      builder.append("= (TO_DATE('1970-01-01', 'YYYY-MM-DD') + INTERVAL '1 day' * (?::INTEGER))");
+                      return true;
+                  } else if (TIMESTAMP_TYPE_NAME.equals(typeName)) {
+                        builder.append("= to_timestamp(?/1000.0)");
+                        return true;
+                  }
+              }
+          }
+      }
+      return false;
   }
 
   /**
@@ -593,10 +625,32 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
    */
   protected Transform<ColumnId> columnValueVariables(TableDefinition defn) {
     return (builder, columnId) -> {
-      builder.append("?");
-      builder.append(valueTypeCast(defn, columnId));
+        if (!handleDateField2(builder, defn, columnId)) {
+            builder.append("?");
+            builder.append(valueTypeCast(defn, columnId));
+        }
     };
   }
+
+    protected boolean handleDateField2(ExpressionBuilder builder, TableDefinition tableDefn, ColumnId columnId) {
+        if (tableDefn != null) {
+            ColumnDefinition defn = tableDefn.definitionForColumn(columnId.name());
+            if (defn != null) {
+                String typeName = defn.typeName(); // database-specific
+                if (typeName != null) {
+                    typeName = typeName.toLowerCase();
+                    if (DATE_TYPE_NAME.equals(typeName)) {
+                        builder.append("(TO_DATE('1970-01-01', 'YYYY-MM-DD') + INTERVAL '1 day' * (?::INTEGER))");
+                        return true;
+                    } else if (TIMESTAMP_TYPE_NAME.equals(typeName)) {
+                        builder.append("to_timestamp(?/1000.0)");
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
   /**
    * Return the typecast expression that can be used as a suffix for a value variable of the

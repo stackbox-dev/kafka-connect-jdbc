@@ -15,9 +15,14 @@
 
 package io.confluent.connect.jdbc.sink;
 
+import io.confluent.connect.jdbc.dialect.DatabaseDialect;
+import io.confluent.connect.jdbc.util.CachedConnectionProvider;
+import io.confluent.connect.jdbc.util.TableId;
 import org.apache.kafka.connect.data.Struct;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -25,12 +30,6 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
-
-import io.confluent.connect.jdbc.dialect.DatabaseDialect;
-import io.confluent.connect.jdbc.util.CachedConnectionProvider;
-import io.confluent.connect.jdbc.util.TableId;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class JdbcDbWriter {
     private static final Logger log = LoggerFactory.getLogger(JdbcDbWriter.class);
@@ -77,6 +76,9 @@ public class JdbcDbWriter {
                     continue;
                 }
                 Struct recordValue = (Struct) record.value();
+                if (recordValue.schema().field("source") == null) {
+                    continue;
+                }
                 Object sourceObj = recordValue.get("source");
                 if (!(sourceObj instanceof Struct)) {
                     log.warn(
