@@ -607,7 +607,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
                       builder.append("= (TO_DATE('1970-01-01', 'YYYY-MM-DD') + INTERVAL '1 day' * (?::INTEGER))");
                       return true;
                   } else if (TIMESTAMP_TYPE_NAME.equals(typeName)) {
-                        builder.append("= to_timestamp(?/1000.0)");
+                        builder.append("= to_timestamp(?/1000000.0)");
                         return true;
                   }
               }
@@ -643,7 +643,7 @@ public class PostgreSqlDatabaseDialect extends GenericDatabaseDialect {
                         builder.append("(TO_DATE('1970-01-01', 'YYYY-MM-DD') + INTERVAL '1 day' * (?::INTEGER))");
                         return true;
                     } else if (TIMESTAMP_TYPE_NAME.equals(typeName)) {
-                        builder.append("to_timestamp(?/1000.0)");
+                        builder.append("to_timestamp(?/1000000.0)");
                         return true;
                     }
                 }
